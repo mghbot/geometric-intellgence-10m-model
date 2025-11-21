@@ -1,0 +1,101 @@
+# Geometric Intelligence 10M Parameter Model Configuration
+
+model:
+  # Total parameter budget: 10M
+  # Base Llama 3.3: 7.8M
+  # Coordinate Infrastructure: 2.2M
+
+  base_architecture:
+    num_layers: 10
+    hidden_dim: 448
+    num_attention_heads: 16
+    num_kv_heads: 4  # Grouped Query Attention (GQA)
+    head_dim: 112  # hidden_dim / num_attention_heads = 448 / 4 = 112 per GQA group
+    vocab_size: 32000  # Llama tokenizer vocab size
+    max_seq_len: 4096
+    intermediate_dim: 1792  # 4 * hidden_dim for SwiGLU
+    rope_theta: 500000.0  # RoPE base frequency
+    norm_eps: 1e-5  # RMSNorm epsilon
+
+  coordinate_system:
+    num_coordinates: 1024
+    spectral_dim: 128  # Coordinate embedding dimension
+    num_wavelet_pairs: 64  # Number of cos/sin pairs
+    modulation_rank: 12  # Low-rank factorization for U_i, V_i matrices
+    target_matrices: ['Q', 'K', 'V', 'FFN_gate']  # Which matrices to modulate
+
+  coordinate_predictor:
+    hidden_dim: 512
+    num_layers: 2
+    use_residual: true
+
+training:
+  # Three-phase curriculum
+  phase1:
+    name: "primitive_differentiation"
+    tokens: 500_000_000  # 500M tokens
+    batch_size: 256
+    seq_len: 512
+    learning_rate_base: 3e-4
+    learning_rate_coords: 1e-3
+    coord_init_strategy: "one_hot_relaxed"  # One-hot until 5% then relax
+
+  phase2:
+    name: "compositional_blending"
+    tokens: 2_000_000_000  # 2B tokens
+    batch_size: 256
+    seq_len: 512
+    learning_rate_base: 3e-4
+    learning_rate_coords: 1e-3
+    interference_loss_weight: 0.1
+
+  phase3:
+    name: "conversational_dynamics"
+    tokens: 5_000_000_000  # 5B tokens
+    batch_size: 256
+    seq_len: 512
+    learning_rate_base: 3e-4
+    learning_rate_coords: 1e-3
+    temporal_consistency_weight: 0.05
+
+  optimizer:
+    type: "AdamW"
+    beta1: 0.9
+    beta2: 0.95
+    weight_decay: 0.1
+    grad_clip: 1.0
+
+  schedule:
+    warmup_steps: 2000
+    total_steps: 300_000  # 150B tokens / (256 * 512) ≈ 300k steps
+
+inference:
+  coordinate_selection:
+    use_amortized: true
+    use_refinement: true  # Can disable for low-latency
+    refinement_steps: 2
+    refinement_lr: 0.01
+
+  generation:
+    temperature: 0.7
+    top_p: 0.92
+    coordinate_ema_alpha: 0.95  # Exponential moving average for coordinate context
+    coordinate_uncertainty_threshold: 0.5
+    max_coordinate_norm: 50.0  # Length control
+
+  memory_optimization:
+    use_kv_cache: true
+    use_coordinate_cache: true
+    quantize_coordinates: true  # 8-bit quantization
+
+system:
+  device: "cuda"
+  mixed_precision: "fp16"
+  gradient_checkpointing: true
+  compile_model: false  # torch.compile (requires PyTorch 2.0+)
+
+logging:
+  wandb_project: "geometric-intelligence-10m"
+  log_interval: 100
+  eval_interval: 1000
+  save_interval: 5000
